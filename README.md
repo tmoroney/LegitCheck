@@ -65,7 +65,4 @@ Your OpenAI API key is stored locally in your browser's storage and is never sen
 - Fact checking depends on the quality and availability of information through OpenAI's search capability
 - Some complex or nuanced claims may not be properly identified
 - API usage will count toward your OpenAI API quota and may incur charges
-
-## License
-
-MIT
+- Search capabilities are quite expensive compared to regular GPT prompts
