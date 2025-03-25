@@ -295,40 +295,45 @@ async function startFactCheck(apiKey) {
 async function callOpenAIAPI(apiKey, articleText) {
   console.log('Calling OpenAI API...');
 
+  // Get current date
+  const currentDate = new Date();
+  const options = { year: 'numeric', month: 'long', day: 'numeric' };
+  const formattedDate = currentDate.toLocaleDateString('en-US', options);
+
   // Construct the prompt for the API
   const prompt = `
-  You are a fact-checking assistant. Please analyze the following article text for factual issues, statements that need clarification, and political bias.
-  
-  For each issue, please provide:
-  1. The exact claim text that contains the factual issue or needs clarification
-  2. An assessment of the accuracy: "completely_incorrect" (for false claims), "partially_incorrect" (for misleading or incomplete claims), or "needs_clarification" (for claims that are not incorrect but would benefit from additional context)
-  3. An explanation of why the claim is problematic or needs clarification
-  4. Reliable sources that support your assessment (URLs or names of reputable sources)
-  5. The correct information or necessary clarification. Avoid repeating any details already mentioned in the explanation. Only include truly new or additional information here, and keep it concise.
-  
-  Additionally, please assess the overall political bias of the article on a scale from -10 to +10 where:
-  - -10 represents extreme left/liberal bias
-  - 0 represents neutral/balanced reporting
-  - +10 represents extreme right/conservative bias
-  
-  Please format your response as a JSON object with the following structure:
-  {
-    "factCheckResults": [
-      {
-        "claimText": "The exact text of the claim",
-        "accuracy": "completely_incorrect/partially_incorrect/needs_clarification",
-        "explanation": "Why the claim is problematic or needs clarification",
-        "sources": ["source1", "source2"],
-        "counterArguments": "The correct information or necessary clarification (without duplicating the explanation)"
-      }
-    ],
-    "politicalBias": {
-      "score": -5 to +5,
-      "explanation": "Brief explanation of why you assigned this bias score"
+  You are a fact-checking assistant that outputs formatted JSON data. The current date is ${formattedDate}. Please analyze the following article text for factual issues, statements that need clarification, and political bias. **It is crucial to use the most up-to-date information available through your search, especially for claims related to events or personnel changes since January 20, 2025.**
+
+For each issue, please provide:
+1. The exact claim text that contains the factual issue or needs clarification
+2. An assessment of the accuracy: "completely_incorrect" (for demonstrably false claims based on the most current information), "partially_incorrect" (for misleading or incomplete claims), or "needs_clarification" (for claims that are not definitively incorrect but would benefit from additional context)
+3. An explanation of why the claim is problematic or needs clarification. **When assessing accuracy, clearly state the "as of" date for the information you are using to make your determination. Be cautious before labeling a claim as "completely_incorrect," especially if it pertains to recent events or potential changes in roles. Double-check your sources for the very latest information.**
+4. Reliable sources that support your assessment (URLs or names of reputable sources). **Prioritize sources with recent dates.**
+5. The correct information or necessary clarification. Avoid repeating any details already mentioned in the explanation. Only include truly new or additional information here, and keep it concise.
+
+Additionally, please assess the overall political bias of the article on a scale from -10 to +10 where:
+- -10 represents extreme left/liberal bias
+- 0 represents neutral/balanced reporting
+- +10 represents extreme right/conservative bias
+
+Please format your response as a JSON object with the following structure:
+{
+  "factCheckResults": [
+    {
+      "claimText": "The exact text of the claim",
+      "accuracy": "completely_incorrect/partially_incorrect/needs_clarification",
+      "explanation": "Why the claim is problematic or needs clarification" - use bullet points,
+      "sources": ["source1", "source2"],
+      "counterArguments": "The correct information or necessary clarification (without duplicating the explanation)" - use bullet points
     }
+  ],
+  "politicalBias": {
+    "score": -5 to +5,
+    "explanation": "Brief explanation of why you assigned this bias score" - use bullet points
   }
-  
-  Article text: ${articleText}
+}
+
+Article text: ${articleText}
   `;
 
   const requestData = {
@@ -403,9 +408,53 @@ function processFactCheckResults(results, paragraphs) {
   results.factCheckResults.forEach(result => {
     const claimText = result.claimText;
     const accuracy = result.accuracy;
-    const explanation = result.explanation;
+    
+    // Format explanation and counterArguments as HTML bullet points
+    let explanation = result.explanation;
+    if (explanation) {
+      if (Array.isArray(explanation)) {
+        // If it's an array, create bullet points directly from array items
+        explanation = '<ul class="fact-points">' + 
+          explanation.map(point => `<li>${point}</li>`).join('') + 
+          '</ul>';
+      } else if (typeof explanation === 'string') {
+        // Check if it already has HTML formatting
+        if (!explanation.includes('<ul>') && !explanation.includes('<li>')) {
+          // Split by commas and create bullet points
+          const points = explanation.split(',').map(point => point.trim()).filter(Boolean);
+          explanation = '<ul class="fact-points">' + 
+            points.map(point => `<li>${point}</li>`).join('') + 
+            '</ul>';
+        }
+      } else {
+        // If it's another type, convert to string
+        explanation = '<ul class="fact-points"><li>' + JSON.stringify(explanation) + '</li></ul>';
+      }
+    }
+    
+    let counterArguments = result.counterArguments;
+    if (counterArguments) {
+      if (Array.isArray(counterArguments)) {
+        // If it's an array, create bullet points directly from array items
+        counterArguments = '<ul class="fact-points">' + 
+          counterArguments.map(point => `<li>${point}</li>`).join('') + 
+          '</ul>';
+      } else if (typeof counterArguments === 'string') {
+        // Check if it already has HTML formatting
+        if (!counterArguments.includes('<ul>') && !counterArguments.includes('<li>')) {
+          // Split by commas and create bullet points
+          const points = counterArguments.split(',').map(point => point.trim()).filter(Boolean);
+          counterArguments = '<ul class="fact-points">' + 
+            points.map(point => `<li>${point}</li>`).join('') + 
+            '</ul>';
+        }
+      } else {
+        // If it's another type, convert to string
+        counterArguments = '<ul class="fact-points"><li>' + JSON.stringify(counterArguments) + '</li></ul>';
+      }
+    }
+    
     const sources = result.sources;
-    const counterArguments = result.counterArguments;
 
     console.log(`Processing claim: "${claimText.substring(0, 50)}..."`);
 
@@ -426,9 +475,9 @@ function processFactCheckResults(results, paragraphs) {
         wrapper.innerHTML = paragraphText.replace(
           new RegExp(escapeRegExp(claimText), 'g'),
           `<span class="fact-check-highlight ${highlightClass}" 
-                data-explanation="${escapeHtml(explanation)}"
-                data-sources="${escapeHtml(JSON.stringify(sources))}"
-                data-counter="${escapeHtml(counterArguments)}"
+                data-explanation="${escapeHtml(explanation || '')}"
+                data-sources="${escapeHtml(JSON.stringify(sources || []))}"
+                data-counter="${escapeHtml(counterArguments || '')}"
                 data-accuracy="${accuracy}">${claimText}</span>`
         );
 
@@ -1030,26 +1079,13 @@ function combineInformation(explanation, counter, accuracy) {
   const points = [];
   const correctPoints = [];
 
-  // Use a regex that splits after ., !, or ? followed by whitespace and an uppercase letter.
-  // This should help avoid splitting at abbreviations or other places.
-  const sentenceRegex = /(?<=[.?!])\s+(?=[A-Z])/;
-
+  // No longer splitting by sentences - using the entire text as provided
   if (explanation && explanation.trim()) {
-    let sentences = explanation.split(sentenceRegex).map(s => s.trim()).filter(Boolean);
-    if (sentences.length > 0) {
-      sentences.forEach(sentence => points.push(sentence));
-    } else {
-      points.push(explanation.trim());
-    }
+    points.push(explanation.trim());
   }
 
   if (counter && counter.trim()) {
-    let sentences = counter.split(sentenceRegex).map(s => s.trim()).filter(Boolean);
-    if (sentences.length > 0) {
-      sentences.forEach(sentence => correctPoints.push(sentence));
-    } else {
-      correctPoints.push(counter.trim());
-    }
+    correctPoints.push(counter.trim());
   }
 
   if (points.length === 0 && correctPoints.length === 0) {
@@ -1080,11 +1116,9 @@ function combineInformation(explanation, counter, accuracy) {
           Issue
         </h4>`;
     }
-    html += '<ul class="fact-points">';
-    points.forEach(point => {
-      html += `<li>${point}</li>`;
-    });
-    html += '</ul></div>';
+    // Directly insert the explanation text which should already contain bullet points from the API response
+    html += points[0];
+    html += '</div>';
   }
 
   // Correct info / Additional Context section
@@ -1102,16 +1136,14 @@ function combineInformation(explanation, counter, accuracy) {
       html += `
         <h4>
           <svg class="fact-icon fact-correct-icon" viewBox="0 0 24 24">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>
           </svg>
           Correct Information
         </h4>`;
     }
-    html += '<ul class="fact-points">';
-    correctPoints.forEach(point => {
-      html += `<li>${point}</li>`;
-    });
-    html += '</ul></div>';
+    // Directly insert the counter text which should already contain bullet points from the API response
+    html += correctPoints[0];
+    html += '</div>';
   }
 
   html += '</div>';
